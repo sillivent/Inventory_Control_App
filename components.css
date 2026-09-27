@@ -1,0 +1,12 @@
+/* Component-Specific UI Styling & Transitions */
+#toastNotification {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+}
+
+.nav-tab {
+  transition: all 0.15s ease-in-out;
+}
+
+.table-row-hover {
+  transition: background-color 0.15s ease;
+}
