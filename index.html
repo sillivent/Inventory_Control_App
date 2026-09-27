@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>DC Materials Vault & Barcode Engine</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- JsBarcode for client-side SVG Code128 barcode generation -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+  <!-- Chart.js for real-time quantity, consumption & receiving trendlines -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Google Font: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Modular Stylesheets -->
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/print.css">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            vault: {
+              50: '#f0f9ff',
+              500: '#0284c7',
+              800: '#075985',
+              900: '#0c4a6e',
+              950: '#082f49'
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="h-full flex flex-col font-sans overflow-x-hidden selection:bg-sky-500 selection:text-white antialiased">
+
+  <!-- Header Component -->
+<header class="bg-slate-900/95 border-b border-slate-800 sticky top-0 z-40 px-3 sm:px-6 py-2.5 shadow-xl backdrop-blur-md">
+  <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
+    
+    <!-- Brand & Scanner Hardware Status -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="relative flex items-center justify-center">
+          <span class="animate-ping absolute inline-flex h-3.5 w-3.5 rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" title="Zebra Hardware HID Scanner Listener Active"></span>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-1.5">
+              <span class="text-sky-400">DC</span> Materials Vault
+            </h1>
+            <span class="text-[9px] font-mono font-semibold uppercase px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/60">v3.0 Adaptive</span>
+          </div>
+          <p class="text-[10px] sm:text-[11px] text-slate-400 font-medium">Consumables & Infrastructure Logistics Platform</p>
+        </div>
+      </div>
+
+      <!-- Mobile Tech & Mode Indicator -->
+      <div class="flex md:hidden items-center gap-2">
+        <div class="bg-slate-950 px-2 py-1 rounded border border-slate-800 text-[10px] font-mono text-sky-400 font-bold">
+          <span id="mobileTechBadge">TECH-774</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-semibold overflow-x-auto w-full md:w-auto">
+      <button onclick="window.switchView('dashboard')" id="tab-dashboard" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-white bg-sky-600 shadow-sm">
+        Dashboard & Trends
+      </button>
+      <button onclick="window.switchView('catalog')" id="tab-catalog" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+        Item Catalog
+      </button>
+      <button onclick="window.switchView('locations')" id="tab-locations" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+        Locations
+      </button>
+      <button onclick="window.switchView('massMove')" id="tab-massMove" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+        Relocation
+      </button>
+      <button onclick="window.switchView('ledger')" id="tab-ledger" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+        Audit Ledger
+      </button>
+    </nav>
+
+    <div class="flex items-center justify-between md:justify-end gap-2 pt-1 md:pt-0 border-t border-slate-800 md:border-t-0">
+      <button id="connectStorageBtn" onclick="window.handleConnectDualStorage()" class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 shadow-sm" title="Synchronize local and shared directories">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+        <span id="storageBtnText" class="truncate max-w-[130px] sm:max-w-none">Connect Vault Folders</span>
+      </button>
+
+      <div class="hidden sm:block h-6 w-px bg-slate-800"></div>
+
+      <div class="hidden md:flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+        <span class="text-[10px] uppercase font-bold text-slate-400">Tech:</span>
+        <input type="text" id="techIdInput" value="TECH-774" onchange="window.syncTechId(this.value)" class="w-20 bg-transparent text-xs text-sky-400 font-mono font-bold focus:outline-none" title="Active Technician Badge / ID">
+      </div>
+    </div>
+
+  </div>
+</header>
+
+
+  <!-- Active Scanner & Workzone Containers -->
+  <div class="max-w-7xl mx-auto w-full px-3 sm:px-6 mt-3 sm:mt-4 space-y-2">
+<!-- Active Scanner Quick-Trigger Card -->
+<div id="scannerBanner" class="hidden bg-slate-900 border-2 border-sky-500 rounded-xl p-3 sm:p-4 shadow-2xl shadow-sky-950/50 transition-all duration-200">
+  <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    
+    <div class="flex items-start sm:items-center gap-3">
+      <div class="p-2.5 bg-sky-500/10 border border-sky-500/30 rounded-xl text-sky-400 flex flex-col items-center justify-center min-w-[50px]">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+        <span class="text-[8px] font-mono font-extrabold uppercase mt-0.5 tracking-wider">ZEBRA</span>
+      </div>
+      <div>
+        <div class="flex flex-wrap items-center gap-2">
+          <span id="scannedCategoryBadge" class="text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-sky-900/60 text-sky-300 border border-sky-700/50"></span>
+          <h2 id="scannedItemName" class="text-sm sm:text-base font-bold text-white tracking-tight leading-snug"></h2>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-300 mt-1 font-mono">
+          <span>SKU: <strong id="scannedSkuText" class="text-sky-400"></strong></span>
+          <span>&bull;</span>
+          <span>Work Bin: <strong id="scannedLocationTarget" class="text-amber-400"></strong></span>
+          <span>&bull;</span>
+          <span>Stock: <strong id="scannedStockCount" class="text-emerald-400"></strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Packaging Action Tier Controls (Item, Carton, Box across Received, Stored, Consumed) -->
+    <div id="scannerActionButtons" class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+      <!-- Dynamically populated based on item metadata -->
+    </div>
+
+  </div>
+</div>
+
+<!-- Software Barcode Emulation Simulator & Work-Zone Selector -->
+<div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-slate-900/70 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400">
+  <div class="flex items-center gap-2">
+    <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+    <span class="text-[11px] truncate">Hardware wedge active. Or select active work zone:</span>
+    <select id="headerActiveLocationSelect" onchange="window.setActiveLocation(this.value)" class="bg-slate-950 border border-slate-700 rounded px-2 py-0.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500 max-w-[180px]">
+      <!-- Injected via JS -->
+    </select>
+  </div>
+
+  <div class="flex items-center gap-1.5 self-end sm:self-auto w-full sm:w-auto">
+    <input type="text" id="manualBarcodeInput" placeholder="Manual scan / SKU simulation..." class="bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-sky-500 w-full sm:w-60 font-mono">
+    <button onclick="window.triggerManualSimulatedScan()" class="bg-slate-800 hover:bg-slate-700 text-sky-400 px-2.5 py-1 rounded text-xs font-semibold whitespace-nowrap">Simulate</button>
+  </div>
+</div>
+
+  </div>
+
+  <!-- Main View Container -->
+  <main class="flex-1 max-w-7xl mx-auto w-full p-3 sm:p-6 overflow-y-auto">
+<!-- VIEW 1: DASHBOARD & INTERACTIVE TRENDLINE ENGINE -->
+<div id="view-dashboard" class="space-y-5">
+  
+  <!-- Metrics Overview -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm">
+      <div class="text-[10px] sm:text-[11px] uppercase font-bold text-slate-400">Total Material SKUs</div>
+      <div id="metric-total-skus" class="text-xl sm:text-2xl font-black text-white mt-1 font-mono">0</div>
+      <div class="text-[10px] text-slate-500 mt-0.5">Cataloged items</div>
+    </div>
+    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm">
+      <div class="text-[10px] sm:text-[11px] uppercase font-bold text-slate-400">Low Stock Warnings</div>
+      <div id="metric-low-stock" class="text-xl sm:text-2xl font-black text-rose-400 mt-1 font-mono">0</div>
+      <div class="text-[10px] text-slate-500 mt-0.5">Below minimum safe par</div>
+    </div>
+    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm">
+      <div class="text-[10px] sm:text-[11px] uppercase font-bold text-slate-400">24h Consumed</div>
+      <div id="metric-24h-consumption" class="text-xl sm:text-2xl font-black text-amber-400 mt-1 font-mono">0</div>
+      <div class="text-[10px] text-slate-500 mt-0.5">Units deployed to floor</div>
+    </div>
+    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm">
+      <div class="text-[10px] sm:text-[11px] uppercase font-bold text-slate-400">24h Received</div>
+      <div id="metric-24h-received" class="text-xl sm:text-2xl font-black text-emerald-400 mt-1 font-mono">0</div>
+      <div class="text-[10px] text-slate-500 mt-0.5">Units received into vault</div>
+    </div>
+  </div>
+
+  <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-lg">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+      <div>
+        <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+          <span class="text-sky-400">Dynamic Inventory Velocity</span> & Quantity Trendline
+        </h2>
+        <p class="text-xs text-slate-400">Adjust item filters and location targets to inspect net quantity, receiving rates, and consumption.</p>
+      </div>
+
+      <!-- Chart Parameter Filters -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div>
+          <label class="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Material SKU</label>
+          <select id="chartItemFilter" onchange="window.updateInventoryChart()" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-sky-300 font-mono focus:outline-none focus:border-sky-500">
+            <option value="ALL">All Materials (Aggregate)</option>
+            <!-- Injected via JS -->
+          </select>
+        </div>
+        <div>
+          <label class="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Specific Location</label>
+          <select id="chartLocationFilter" onchange="window.updateInventoryChart()" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500">
+            <option value="ALL">All Locations Combined</option>
+            <!-- Injected via JS -->
+          </select>
+        </div>
+        <div>
+          <label class="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Time Interval</label>
+          <select id="chartTimeWindowFilter" onchange="window.updateInventoryChart()" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+            <option value="24h">Last 24 Hours</option>
+            <option value="7d" selected>Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Canvas Container (Responsive Height) -->
+    <div class="relative w-full h-64 sm:h-72 mt-3">
+      <canvas id="inventoryTrendCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Materials Balance Table Card -->
+  <div class="bg-slate-900/90 border border-slate-800 rounded-xl shadow-lg overflow-hidden">
+    
+    <!-- Table Toolbar -->
+    <div class="p-3 sm:p-4 border-b border-slate-800 flex flex-col md:flex-row justify-between md:items-center gap-3">
+      <div class="flex flex-wrap items-center gap-1.5" id="categoryFiltersContainer">
+        <!-- Filter buttons injected via JS -->
+      </div>
+
+      <div class="flex items-center gap-2">
+        <input type="text" id="dashboardSearchInput" oninput="window.renderDashboardTable()" placeholder="Search description, SKU, bin..." class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 w-full sm:w-60">
+        <button onclick="window.exportSnapshotCsv()" class="bg-slate-800 hover:bg-slate-700 text-sky-400 font-semibold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 border border-slate-700 whitespace-nowrap" title="Export CSV for Shift Handoff">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          CSV
+        </button>
+      </div>
+    </div>
+
+    <!-- Materials Table -->
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs border-collapse min-w-[700px]">
+        <thead>
+          <tr class="bg-slate-950/80 text-slate-400 uppercase font-semibold border-b border-slate-800 tracking-wider">
+            <th class="py-3 px-4">Item & SKU Code</th>
+            <th class="py-3 px-4">Locations Breakdown</th>
+            <th class="py-3 px-4 text-center">Net On-Hand</th>
+            <th class="py-3 px-4 text-center">24h Received</th>
+            <th class="py-3 px-4 text-center">24h Consumed</th>
+            <th class="py-3 px-4 text-center">7d Consumed</th>
+            <th class="py-3 px-4 text-right">Rapid Action</th>
+          </tr>
+        </thead>
+        <tbody id="dashboardTableBody" class="divide-y divide-slate-800/80 text-slate-300">
+          <!-- Dynamically rendered -->
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- VIEW 2: ITEM CATALOG & TIER DIRECTORY -->
+<div id="view-catalog" class="hidden space-y-6">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    
+    <!-- Register Consumable Form -->
+    <div class="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-xl shadow-lg">
+      <h2 class="text-sm font-bold text-sky-400 uppercase tracking-wider mb-1">Catalog New Material</h2>
+      <p class="text-xs text-slate-400 mb-4">Define packaging rules and associate vendor factory barcodes.</p>
+
+      <form id="newCatalogItemForm" onsubmit="window.handleCreateCatalogItem(event)" class="space-y-3.5">
+        <div>
+          <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Item SKU (Internal Part #)</label>
+          <input name="sku" required placeholder="e.g. FBR-LC-LC-OM4-5M" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Vendor UPC / Box Barcode (Optional)</label>
+          <div class="flex gap-2">
+            <input name="vendorBarcode" id="newVendorBarcodeInput" placeholder="Scan OEM carton barcode..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+            <button type="button" onclick="document.getElementById('newVendorBarcodeInput').value = 'OEM-' + Math.floor(10000000 + Math.random() * 90000000)" class="bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-semibold px-2 py-1 rounded border border-slate-700 whitespace-nowrap">Gen OEM</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Material Description</label>
+          <input name="name" required placeholder="Fiber Patch LC-LC OM4 5m Aqua duplex..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Units per Carton</label>
+            <input name="unitsPerCarton" type="number" min="1" value="10" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Cartons per Box</label>
+            <input name="cartonsPerBox" type="number" min="1" value="5" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Category</label>
+            <select name="category" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+              <option>Fiber Cabling</option>
+              <option>Copper Cabling</option>
+              <option>Optics</option>
+              <option>Labels</option>
+              <option>Air Containment</option>
+              <option>Cabinet Locks</option>
+              <option>Hardware Spares</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Min Safe Par</label>
+            <input name="minThreshold" type="number" min="1" value="15" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Default Bin Location</label>
+          <select name="defaultLocationId" id="newDefaultLocationSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none font-mono">
+            <!-- Location options injected via JS -->
+          </select>
+        </div>
+
+        <button type="submit" class="w-full mt-2 bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition shadow-md shadow-sky-950/40">
+          Save SKU to Master Catalog
+        </button>
+      </form>
+    </div>
+
+    <div class="lg:col-span-2 bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-xl shadow-lg">
+      <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-4">
+        <div>
+          <h2 class="text-sm font-bold text-white uppercase tracking-wider">Catalog & Packaging Tier Directory</h2>
+          <p class="text-xs text-slate-400">Generate printable Code128 barcodes for warehouse bins and packaging.</p>
+        </div>
+        <span id="catalogCountBadge" class="text-xs font-mono font-bold text-sky-400 bg-sky-950 px-2.5 py-1 rounded border border-sky-800 self-start sm:self-auto">0 SKUs</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse min-w-[500px]">
+          <thead>
+            <tr class="border-b border-slate-800 text-slate-400 uppercase font-semibold">
+              <th class="py-2.5 px-3">SKU & Vendor UPC</th>
+              <th class="py-2.5 px-3">Description / Group</th>
+              <th class="py-2.5 px-3">Packaging Rules</th>
+              <th class="py-2.5 px-3 text-right">Label Actions</th>
+            </tr>
+          </thead>
+          <tbody id="catalogTableBody" class="divide-y divide-slate-800 text-slate-300 font-mono">
+            <!-- Dynamically injected -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- VIEW 3: LOCATION HIERARCHY -->
+<div id="view-locations" class="hidden space-y-6">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    
+    <!-- Add Location Form -->
+    <div class="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-xl shadow-lg">
+      <h2 class="text-sm font-bold text-sky-400 uppercase tracking-wider mb-1">Define Storage Location</h2>
+      <p class="text-xs text-slate-400 mb-4">Build data hall, room, cage, and shelf bin hierarchy.</p>
+
+      <form id="newLocationForm" onsubmit="window.handleCreateLocation(event)" class="space-y-3.5">
+        <div>
+          <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Location Identifier (Barcode)</label>
+          <input name="id" required placeholder="LOC-HALL1-R04-BIN02" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono uppercase focus:border-sky-500 focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Facility / Site</label>
+          <input name="site" value="DC-01 (DFW)" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Room / Data Hall</label>
+          <input name="room" required placeholder="e.g. Data Hall 2 or Inbound Dock" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Zone / Row / Rack / Shelf</label>
+          <input name="zone" required placeholder="Row 04 - Rack 12 - Shelf C" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+        </div>
+
+        <button type="submit" class="w-full mt-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg text-xs transition shadow-md shadow-emerald-950/40">
+          Register Location & Barcode
+        </button>
+      </form>
+    </div>
+
+    <div class="lg:col-span-2 bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-xl shadow-lg">
+      <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-4">
+        <div>
+          <h2 class="text-sm font-bold text-white uppercase tracking-wider">Registered Data Hall Bins</h2>
+          <p class="text-xs text-slate-400">Scan these location tags on the floor to lock in active work zones.</p>
+        </div>
+        <span id="locationCountBadge" class="text-xs font-mono font-bold text-emerald-400 bg-emerald-950 px-2.5 py-1 rounded border border-emerald-800 self-start sm:self-auto">0 Bins</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse min-w-[500px]">
+          <thead>
+            <tr class="border-b border-slate-800 text-slate-400 uppercase font-semibold">
+              <th class="py-2.5 px-3">Location Barcode ID</th>
+              <th class="py-2.5 px-3">Room / Hall</th>
+              <th class="py-2.5 px-3">Zone & Shelf Breakdown</th>
+              <th class="py-2.5 px-3 text-right">Bin Label</th>
+            </tr>
+          </thead>
+          <tbody id="locationTableBody" class="divide-y divide-slate-800 text-slate-300 font-mono">
+            <!-- Dynamically injected -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- VIEW 4: BULK RELOCATION MANIFEST -->
+<div id="view-massMove" class="hidden space-y-6">
+  <div class="max-w-4xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-6 shadow-xl">
+    
+    <div class="border-b border-slate-800 pb-4 mb-6">
+      <h2 class="text-base font-extrabold text-white flex items-center gap-2">
+        <span class="text-sky-400">Bulk Relocation</span> Manifest Engine
+      </h2>
+      <p class="text-xs text-slate-400 mt-1">Move cartons and boxes from Inbound Staging to Data Halls without individual line audits.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-xs uppercase font-bold text-slate-400 mb-1.5">Source Location (From)</label>
+        <select id="massMoveSourceSelect" onchange="window.refreshMassMoveAvailableItems()" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+          <!-- Injected via JS -->
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs uppercase font-bold text-slate-400 mb-1.5">Target Destination (To)</label>
+        <select id="massMoveTargetSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+          <!-- Injected via JS -->
+        </select>
+      </div>
+    </div>
+
+    <!-- Add Items to Manifest Sub-Panel -->
+    <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-6">
+      <div class="text-xs font-bold text-slate-300 uppercase mb-3 flex justify-between items-center">
+        <span>Stage Materials for Transfer</span>
+        <span id="sourceAvailableStockNotice" class="text-slate-500 font-mono text-[11px]"></span>
+      </div>
+      
+      <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+        <div class="sm:col-span-6">
+          <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Select Consumable</label>
+          <select id="massMoveItemSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+            <!-- Injected via JS -->
+          </select>
+        </div>
+        <div class="sm:col-span-3">
+          <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Quantity Units</label>
+          <input type="number" id="massMoveQtyInput" value="10" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+        </div>
+        <div class="sm:col-span-3">
+          <button type="button" onclick="window.addStageItemToManifest()" class="w-full bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 font-bold py-2 rounded-lg text-xs transition">
+            + Add to List
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manifest Staging Table -->
+    <div class="border border-slate-800 rounded-xl overflow-hidden mb-6">
+      <table class="w-full text-left text-xs border-collapse">
+        <thead>
+          <tr class="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+            <th class="py-2.5 px-4">Item SKU</th>
+            <th class="py-2.5 px-4">Description</th>
+            <th class="py-2.5 px-4 text-center">Transfer Amount</th>
+            <th class="py-2.5 px-4 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody id="massMoveManifestBody" class="divide-y divide-slate-800 text-slate-300 font-mono">
+          <tr>
+            <td colspan="4" class="py-4 text-center text-slate-500 font-sans">No items added to relocation manifest yet.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <button onclick="window.commitMassRelocation()" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 rounded-lg text-xs uppercase tracking-wider transition shadow-lg shadow-sky-950/50">
+      Commit Bulk Relocation Event
+    </button>
+
+  </div>
+</div>
+
+<!-- VIEW 5: AUDIT LEDGER -->
+<div id="view-ledger" class="hidden space-y-6">
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-lg">
+    <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 pb-4 border-b border-slate-800">
+      <div>
+        <h2 class="text-sm font-bold text-white uppercase tracking-wider">Append-Only Transaction Ledger</h2>
+        <p class="text-xs text-slate-400">Verifiable event receipts stored in catalogs_local, materials_local, catalogs_shared, and materials_shared.</p>
+      </div>
+      <button onclick="window.generateShiftHandoffDigest()" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 self-start sm:self-auto">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+        Generate Shift Digest
+      </button>
+    </div>
+
+    <div class="overflow-x-auto mt-4">
+      <table class="w-full text-left text-xs border-collapse min-w-[650px]">
+        <thead>
+          <tr class="text-slate-400 uppercase font-semibold border-b border-slate-800">
+            <th class="py-2.5 px-3">Timestamp</th>
+            <th class="py-2.5 px-3">Event Type</th>
+            <th class="py-2.5 px-3">Material SKU / Description</th>
+            <th class="py-2.5 px-3">Location / Path</th>
+            <th class="py-2.5 px-3 text-center">Packaging & Delta</th>
+            <th class="py-2.5 px-3 text-right">Tech Badge</th>
+          </tr>
+        </thead>
+        <tbody id="ledgerTableBody" class="divide-y divide-slate-800 text-slate-300 font-mono">
+          <!-- Dynamically injected -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+  </main>
+
+  <!-- Modals & Overlays -->
+<!-- Print Modal Root -->
+<div id="printModalRoot" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+  <div id="printModalContent" class="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+    <div class="flex justify-between items-center mb-4 no-print">
+      <span id="printModalTypeTag" class="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">
+        BARCODE LABEL
+      </span>
+      <button onclick="window.closePrintModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+    </div>
+
+    <!-- Printable Card Surface -->
+    <div class="printable-barcode-card text-center bg-white text-black p-5 rounded-xl shadow-inner border border-slate-300">
+      <div id="printModalTitle" class="text-xs font-bold font-sans text-slate-900 mb-0.5 leading-tight"></div>
+      <div id="printModalSubtitle" class="text-[10px] font-mono text-slate-600 mb-2"></div>
+      <svg id="modalBarcodeSvg" class="mx-auto my-1"></svg>
+      <div id="printModalFooter" class="text-[9px] font-mono text-slate-500 mt-1 uppercase">DC Floor Standard 1D</div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex gap-2.5 mt-5 no-print">
+      <button onclick="window.print()" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-lg text-xs transition shadow-md">
+        Print Label
+      </button>
+      <button onclick="window.closePrintModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg text-xs font-semibold">
+        Dismiss
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notification System -->
+<div id="toastNotification" class="fixed bottom-5 right-5 z-50 max-w-md bg-slate-900 border border-sky-500/60 text-white px-4 py-3 rounded-xl shadow-2xl transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-3">
+  <div id="toastIcon" class="text-sky-400 font-bold text-lg">&check;</div>
+  <div id="toastMessage" class="text-xs font-medium">Notification message</div>
+</div>
+
+
+  <!-- Master ES6 Application Controller -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

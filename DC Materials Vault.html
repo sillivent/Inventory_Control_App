@@ -1,0 +1,1908 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>DC Materials Vault & Barcode Engine</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- JsBarcode for client-side SVG Code128 barcode generation -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+  <!-- Chart.js for real-time quantity, consumption & receiving trendlines -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Google Font: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            vault: {
+              50: '#f0f9ff',
+              500: '#0284c7',
+              800: '#075985',
+              900: '#0c4a6e',
+              950: '#082f49'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    @media print {
+      body * {
+        visibility: hidden !important;
+      }
+      #printModalContent, #printModalContent * {
+        visibility: visible !important;
+      }
+      #printModalRoot {
+        visibility: visible !important;
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        background: white !important;
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .printable-barcode-card {
+        page-break-inside: avoid;
+        border: 2px dashed #000 !important;
+        padding: 12mm !important;
+        margin: 5mm auto !important;
+        max-width: 90mm !important;
+      }
+    }
+
+    /* Custom smooth scrollbars */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #020617;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-x-hidden selection:bg-sky-500 selection:text-white antialiased">
+
+  <header class="bg-slate-900/95 border-b border-slate-800 sticky top-0 z-40 px-3 sm:px-6 py-2.5 shadow-xl backdrop-blur-md">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
+      
+      <!-- Brand & Scanner Hardware Status -->
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="relative flex items-center justify-center">
+            <span class="animate-ping absolute inline-flex h-3.5 w-3.5 rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" title="Zebra Hardware HID Scanner Listener Active"></span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-1.5">
+                <span class="text-sky-400">DC</span> Materials Vault
+              </h1>
+              <span class="text-[9px] font-mono font-semibold uppercase px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800/60">v3.0 Adaptive</span>
+            </div>
+            <p class="text-[10px] sm:text-[11px] text-slate-400 font-medium">Consumables & Infrastructure Logistics Platform</p>
+          </div>
+        </div>
+
+        <!-- Mobile Tech & Mode Indicator -->
+        <div class="flex md:hidden items-center gap-2">
+          <div class="bg-slate-950 px-2 py-1 rounded border border-slate-800 text-[10px] font-mono text-sky-400 font-bold">
+            <span id="mobileTechBadge">TECH-774</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-semibold overflow-x-auto w-full md:w-auto">
+        <button onclick="switchView('dashboard')" id="tab-dashboard" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-white bg-sky-600 shadow-sm">
+          Dashboard & Trends
+        </button>
+        <button onclick="switchView('catalog')" id="tab-catalog" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+          Item Catalog
+        </button>
+        <button onclick="switchView('locations')" id="tab-locations" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+          Locations
+        </button>
+        <button onclick="switchView('massMove')" id="tab-massMove" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+          Relocation
+        </button>
+        <button onclick="switchView('ledger')" id="tab-ledger" class="nav-tab whitespace-nowrap px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+          Audit Ledger
+        </button>
+      </nav>
+
+      <div class="flex items-center justify-between md:justify-end gap-2 pt-1 md:pt-0 border-t border-slate-800 md:border-t-0">
+        <button id="connectStorageBtn" onclick="handleConnectDualStorage()" class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 shadow-sm" title="Synchronize local and shared directories">
+          <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+          <span id="storageBtnText" class="truncate max-w-[130px] sm:max-w-none">Connect Vault Folders</span>
+        </button>
+
+        <div class="hidden sm:block h-6 w-px bg-slate-800"></div>
+
+        <div class="hidden md:flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+          <span class="text-[10px] uppercase font-bold text-slate-400">Tech:</span>
+          <input type="text" id="techIdInput" value="TECH-774" onchange="syncTechId(this.value)" class="w-20 bg-transparent text-xs text-sky-400 font-mono font-bold focus:outline-none" title="Active Technician Badge / ID">
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <div class="max-w-7xl mx-auto w-full px-3 sm:px-6 mt-3 sm:mt-4 space-y-2">
+    <!-- Active Scanner Quick-Trigger Card -->
+    <div id="scannerBanner" class="hidden bg-slate-900 border-2 border-sky-500 rounded-xl p-3 sm:p-4 shadow-2xl shadow-sky-950/50 transition-all duration-200">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        
+        <div class="flex items-start sm:items-center gap-3">
+          <div class="p-2.5 bg-sky-500/10 border border-sky-500/30 rounded-xl text-sky-400 flex flex-col items-center justify-center min-w-[50px]">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
+            <span class="text-[8px] font-mono font-extrabold uppercase mt-0.5 tracking-wider">ZEBRA</span>
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="scannedCategoryBadge" class="text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-sky-900/60 text-sky-300 border border-sky-700/50"></span>
+              <h2 id="scannedItemName" class="text-sm sm:text-base font-bold text-white tracking-tight leading-snug"></h2>
+            </div>
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-300 mt-1 font-mono">
+              <span>SKU: <strong id="scannedSkuText" class="text-sky-400"></strong></span>
+              <span>&bull;</span>
+              <span>Work Bin: <strong id="scannedLocationTarget" class="text-amber-400"></strong></span>
+              <span>&bull;</span>
+              <span>Stock: <strong id="scannedStockCount" class="text-emerald-400"></strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Packaging Action Tier Controls (Item, Carton, Box across Received, Stored, Consumed) -->
+        <div id="scannerActionButtons" class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <!-- Dynamically populated based on item metadata -->
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Software Barcode Emulation Simulator & Work-Zone Selector -->
+    <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-slate-900/70 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400">
+      <div class="flex items-center gap-2">
+        <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        <span class="text-[11px] truncate">Hardware wedge active. Or select active work zone:</span>
+        <select id="headerActiveLocationSelect" onchange="setActiveLocation(this.value)" class="bg-slate-950 border border-slate-700 rounded px-2 py-0.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500 max-w-[180px]">
+          <!-- Injected via JS -->
+        </select>
+      </div>
+
+      <div class="flex items-center gap-1.5 self-end sm:self-auto w-full sm:w-auto">
+        <input type="text" id="manualBarcodeInput" placeholder="Manual scan / SKU simulation..." class="bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-sky-500 w-full sm:w-60 font-mono">
+        <button onclick="triggerManualSimulatedScan()" class="bg-slate-800 hover:bg-slate-700 text-sky-400 px-2.5 py-1 rounded text-xs font-semibold whitespace-nowrap">Simulate</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="flex-1 max-w-7xl mx-auto w-full p-3 sm:p-6 overflow-y-auto">
+    
+    <!-- VIEW 1: DASHBOARD & INTERACTIVE TRENDLINE ENGINE -->
+    <div id="view-dashboard" class="space-y-5">
+      
+      <!-- Metrics Overview -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm">
+          <div class="text-[10px] sm:text-[11px] uppercase font-bold text-slate-400">Total Material SKUs</div>
+          <div id="metric-total-skus" class="text-xl sm:text-2xl font-black text-white mt-1 font-mono">0</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">Cataloged items</div>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm">
+          <div class="text-[10px] sm:text-[11px] uppercase font-bold text-slate-400">Low Stock Warnings</div>
+          <div id="metric-low-stock" class="text-xl sm:text-2xl font-black text-rose-400 mt-1 font-mono">0</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">Below minimum safe par</div>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm">
+          <div class="text-[10px] sm:text-[11px] uppercase font-bold text-slate-400">24h Consumed</div>
+          <div id="metric-24h-consumption" class="text-xl sm:text-2xl font-black text-amber-400 mt-1 font-mono">0</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">Units deployed to floor</div>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm">
+          <div class="text-[10px] sm:text-[11px] uppercase font-bold text-slate-400">24h Received</div>
+          <div id="metric-24h-received" class="text-xl sm:text-2xl font-black text-emerald-400 mt-1 font-mono">0</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">Units received into vault</div>
+        </div>
+      </div>
+
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+              <span class="text-sky-400">Dynamic Inventory Velocity</span> & Quantity Trendline
+            </h2>
+            <p class="text-xs text-slate-400">Adjust item filters and location targets to inspect net quantity, receiving rates, and consumption.</p>
+          </div>
+
+          <!-- Chart Parameter Filters -->
+          <div class="flex flex-wrap items-center gap-2">
+            <div>
+              <label class="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Material SKU</label>
+              <select id="chartItemFilter" onchange="updateInventoryChart()" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-sky-300 font-mono focus:outline-none focus:border-sky-500">
+                <option value="ALL">All Materials (Aggregate)</option>
+                <!-- Injected via JS -->
+              </select>
+            </div>
+            <div>
+              <label class="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Specific Location</label>
+              <select id="chartLocationFilter" onchange="updateInventoryChart()" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500">
+                <option value="ALL">All Locations Combined</option>
+                <!-- Injected via JS -->
+              </select>
+            </div>
+            <div>
+              <label class="block text-[9px] uppercase font-bold text-slate-500 mb-0.5">Time Interval</label>
+              <select id="chartTimeWindowFilter" onchange="updateInventoryChart()" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-sky-500">
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d" selected>Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Canvas Container (Responsive Height) -->
+        <div class="relative w-full h-64 sm:h-72 mt-3">
+          <canvas id="inventoryTrendCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Materials Balance Table Card -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl shadow-lg overflow-hidden">
+        
+        <!-- Table Toolbar -->
+        <div class="p-3 sm:p-4 border-b border-slate-800 flex flex-col md:flex-row justify-between md:items-center gap-3">
+          <div class="flex flex-wrap items-center gap-1.5" id="categoryFiltersContainer">
+            <!-- Filter buttons injected via JS -->
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input type="text" id="dashboardSearchInput" oninput="renderDashboardTable()" placeholder="Search description, SKU, bin..." class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 w-full sm:w-60">
+            <button onclick="exportSnapshotCsv()" class="bg-slate-800 hover:bg-slate-700 text-sky-400 font-semibold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 border border-slate-700 whitespace-nowrap" title="Export CSV for Shift Handoff">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- Materials Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse min-w-[700px]">
+            <thead>
+              <tr class="bg-slate-950/80 text-slate-400 uppercase font-semibold border-b border-slate-800 tracking-wider">
+                <th class="py-3 px-4">Item & SKU Code</th>
+                <th class="py-3 px-4">Locations Breakdown</th>
+                <th class="py-3 px-4 text-center">Net On-Hand</th>
+                <th class="py-3 px-4 text-center">24h Received</th>
+                <th class="py-3 px-4 text-center">24h Consumed</th>
+                <th class="py-3 px-4 text-center">7d Consumed</th>
+                <th class="py-3 px-4 text-right">Rapid Action</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardTableBody" class="divide-y divide-slate-800/80 text-slate-300">
+              <!-- Dynamically rendered -->
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+
+    <div id="view-catalog" class="hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Register Consumable Form -->
+        <div class="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-xl shadow-lg">
+          <h2 class="text-sm font-bold text-sky-400 uppercase tracking-wider mb-1">Catalog New Material</h2>
+          <p class="text-xs text-slate-400 mb-4">Define packaging rules and associate vendor factory barcodes.</p>
+
+          <form id="newCatalogItemForm" onsubmit="handleCreateCatalogItem(event)" class="space-y-3.5">
+            <div>
+              <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Item SKU (Internal Part #)</label>
+              <input name="sku" required placeholder="e.g. FBR-LC-LC-OM4-5M" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <div>
+              <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Vendor UPC / Box Barcode (Optional)</label>
+              <div class="flex gap-2">
+                <input name="vendorBarcode" id="newVendorBarcodeInput" placeholder="Scan OEM carton barcode..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+                <button type="button" onclick="document.getElementById('newVendorBarcodeInput').value = 'OEM-' + Math.floor(10000000 + Math.random() * 90000000)" class="bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 font-semibold px-2 py-1 rounded border border-slate-700 whitespace-nowrap">Gen OEM</button>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Material Description</label>
+              <input name="name" required placeholder="Fiber Patch LC-LC OM4 5m Aqua duplex..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Units per Carton</label>
+                <input name="unitsPerCarton" type="number" min="1" value="10" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+              </div>
+              <div>
+                <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Cartons per Box</label>
+                <input name="cartonsPerBox" type="number" min="1" value="5" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Category</label>
+                <select name="category" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+                  <option>Fiber Cabling</option>
+                  <option>Copper Cabling</option>
+                  <option>Optics</option>
+                  <option>Labels</option>
+                  <option>Air Containment</option>
+                  <option>Cabinet Locks</option>
+                  <option>Hardware Spares</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Min Safe Par</label>
+                <input name="minThreshold" type="number" min="1" value="15" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Default Bin Location</label>
+              <select name="defaultLocationId" id="newDefaultLocationSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none font-mono">
+                <!-- Location options injected via JS -->
+              </select>
+            </div>
+
+            <button type="submit" class="w-full mt-2 bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-lg text-xs transition shadow-md shadow-sky-950/40">
+              Save SKU to Master Catalog
+            </button>
+          </form>
+        </div>
+
+        <div class="lg:col-span-2 bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-xl shadow-lg">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-4">
+            <div>
+              <h2 class="text-sm font-bold text-white uppercase tracking-wider">Catalog & Packaging Tier Directory</h2>
+              <p class="text-xs text-slate-400">Generate printable Code128 barcodes for warehouse bins and packaging.</p>
+            </div>
+            <span id="catalogCountBadge" class="text-xs font-mono font-bold text-sky-400 bg-sky-950 px-2.5 py-1 rounded border border-sky-800 self-start sm:self-auto">0 SKUs</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse min-w-[500px]">
+              <thead>
+                <tr class="border-b border-slate-800 text-slate-400 uppercase font-semibold">
+                  <th class="py-2.5 px-3">SKU & Vendor UPC</th>
+                  <th class="py-2.5 px-3">Description / Group</th>
+                  <th class="py-2.5 px-3">Packaging Rules</th>
+                  <th class="py-2.5 px-3 text-right">Label Actions</th>
+                </tr>
+              </thead>
+              <tbody id="catalogTableBody" class="divide-y divide-slate-800 text-slate-300 font-mono">
+                <!-- Dynamically injected -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div id="view-locations" class="hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Add Location Form -->
+        <div class="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-xl shadow-lg">
+          <h2 class="text-sm font-bold text-sky-400 uppercase tracking-wider mb-1">Define Storage Location</h2>
+          <p class="text-xs text-slate-400 mb-4">Build data hall, room, cage, and shelf bin hierarchy.</p>
+
+          <form id="newLocationForm" onsubmit="handleCreateLocation(event)" class="space-y-3.5">
+            <div>
+              <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Location Identifier (Barcode)</label>
+              <input name="id" required placeholder="LOC-HALL1-R04-BIN02" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono uppercase focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <div>
+              <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Facility / Site</label>
+              <input name="site" value="DC-01 (DFW)" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <div>
+              <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Room / Data Hall</label>
+              <input name="room" required placeholder="e.g. Data Hall 2 or Inbound Dock" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <div>
+              <label class="block text-[11px] uppercase font-bold text-slate-400 mb-1">Zone / Row / Rack / Shelf</label>
+              <input name="zone" required placeholder="Row 04 - Rack 12 - Shelf C" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <button type="submit" class="w-full mt-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg text-xs transition shadow-md shadow-emerald-950/40">
+              Register Location & Barcode
+            </button>
+          </form>
+        </div>
+
+        <div class="lg:col-span-2 bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-xl shadow-lg">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-4">
+            <div>
+              <h2 class="text-sm font-bold text-white uppercase tracking-wider">Registered Data Hall Bins</h2>
+              <p class="text-xs text-slate-400">Scan these location tags on the floor to lock in active work zones.</p>
+            </div>
+            <span id="locationCountBadge" class="text-xs font-mono font-bold text-emerald-400 bg-emerald-950 px-2.5 py-1 rounded border border-emerald-800 self-start sm:self-auto">0 Bins</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse min-w-[500px]">
+              <thead>
+                <tr class="border-b border-slate-800 text-slate-400 uppercase font-semibold">
+                  <th class="py-2.5 px-3">Location Barcode ID</th>
+                  <th class="py-2.5 px-3">Room / Hall</th>
+                  <th class="py-2.5 px-3">Zone & Shelf Breakdown</th>
+                  <th class="py-2.5 px-3 text-right">Bin Label</th>
+                </tr>
+              </thead>
+              <tbody id="locationTableBody" class="divide-y divide-slate-800 text-slate-300 font-mono">
+                <!-- Dynamically injected -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div id="view-massMove" class="hidden space-y-6">
+      <div class="max-w-4xl mx-auto bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-6 shadow-xl">
+        
+        <div class="border-b border-slate-800 pb-4 mb-6">
+          <h2 class="text-base font-extrabold text-white flex items-center gap-2">
+            <span class="text-sky-400">Bulk Relocation</span> Manifest Engine
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">Move cartons and boxes from Inbound Staging to Data Halls without individual line audits.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div>
+            <label class="block text-xs uppercase font-bold text-slate-400 mb-1.5">Source Location (From)</label>
+            <select id="massMoveSourceSelect" onchange="refreshMassMoveAvailableItems()" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+              <!-- Injected via JS -->
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs uppercase font-bold text-slate-400 mb-1.5">Target Destination (To)</label>
+            <select id="massMoveTargetSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+              <!-- Injected via JS -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Add Items to Manifest Sub-Panel -->
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-6">
+          <div class="text-xs font-bold text-slate-300 uppercase mb-3 flex justify-between items-center">
+            <span>Stage Materials for Transfer</span>
+            <span id="sourceAvailableStockNotice" class="text-slate-500 font-mono text-[11px]"></span>
+          </div>
+          
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+            <div class="sm:col-span-6">
+              <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Select Consumable</label>
+              <select id="massMoveItemSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+                <!-- Injected via JS -->
+              </select>
+            </div>
+            <div class="sm:col-span-3">
+              <label class="block text-[10px] uppercase font-bold text-slate-400 mb-1">Quantity Units</label>
+              <input type="number" id="massMoveQtyInput" value="10" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:border-sky-500 focus:outline-none">
+            </div>
+            <div class="sm:col-span-3">
+              <button type="button" onclick="addStageItemToManifest()" class="w-full bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 font-bold py-2 rounded-lg text-xs transition">
+                + Add to List
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Manifest Staging Table -->
+        <div class="border border-slate-800 rounded-xl overflow-hidden mb-6">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                <th class="py-2.5 px-4">Item SKU</th>
+                <th class="py-2.5 px-4">Description</th>
+                <th class="py-2.5 px-4 text-center">Transfer Amount</th>
+                <th class="py-2.5 px-4 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="massMoveManifestBody" class="divide-y divide-slate-800 text-slate-300 font-mono">
+              <tr>
+                <td colspan="4" class="py-4 text-center text-slate-500 font-sans">No items added to relocation manifest yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <button onclick="commitMassRelocation()" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 rounded-lg text-xs uppercase tracking-wider transition shadow-lg shadow-sky-950/50">
+          Commit Bulk Relocation Event
+        </button>
+
+      </div>
+    </div>
+
+    <div id="view-ledger" class="hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-sm font-bold text-white uppercase tracking-wider">Append-Only Transaction Ledger</h2>
+            <p class="text-xs text-slate-400">Verifiable event receipts stored in catalogs_local, materials_local, catalogs_shared, and materials_shared.</p>
+          </div>
+          <button onclick="generateShiftHandoffDigest()" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 self-start sm:self-auto">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+            Generate Shift Digest
+          </button>
+        </div>
+
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-left text-xs border-collapse min-w-[650px]">
+            <thead>
+              <tr class="text-slate-400 uppercase font-semibold border-b border-slate-800">
+                <th class="py-2.5 px-3">Timestamp</th>
+                <th class="py-2.5 px-3">Event Type</th>
+                <th class="py-2.5 px-3">Material SKU / Description</th>
+                <th class="py-2.5 px-3">Location / Path</th>
+                <th class="py-2.5 px-3 text-center">Packaging & Delta</th>
+                <th class="py-2.5 px-3 text-right">Tech Badge</th>
+              </tr>
+            </thead>
+            <tbody id="ledgerTableBody" class="divide-y divide-slate-800 text-slate-300 font-mono">
+              <!-- Dynamically injected -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <div id="printModalRoot" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div id="printModalContent" class="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+      <div class="flex justify-between items-center mb-4 no-print">
+        <span id="printModalTypeTag" class="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">
+          BARCODE LABEL
+        </span>
+        <button onclick="closePrintModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+
+      <!-- Printable Card Surface -->
+      <div class="printable-barcode-card text-center bg-white text-black p-5 rounded-xl shadow-inner border border-slate-300">
+        <div id="printModalTitle" class="text-xs font-bold font-sans text-slate-900 mb-0.5 leading-tight"></div>
+        <div id="printModalSubtitle" class="text-[10px] font-mono text-slate-600 mb-2"></div>
+        <svg id="modalBarcodeSvg" class="mx-auto my-1"></svg>
+        <div id="printModalFooter" class="text-[9px] font-mono text-slate-500 mt-1 uppercase">DC Floor Standard 1D</div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex gap-2.5 mt-5 no-print">
+        <button onclick="window.print()" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-lg text-xs transition shadow-md">
+          Print Label
+        </button>
+        <button onclick="closePrintModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg text-xs font-semibold">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification System -->
+  <div id="toastNotification" class="fixed bottom-5 right-5 z-50 max-w-md bg-slate-900 border border-sky-500/60 text-white px-4 py-3 rounded-xl shadow-2xl transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-3">
+    <div id="toastIcon" class="text-sky-400 font-bold text-lg">&check;</div>
+    <div id="toastMessage" class="text-xs font-medium">Notification message</div>
+  </div>
+
+  <script>
+    /* Global Application State */
+    const STATE = {
+      activeView: 'dashboard',
+      techId: 'TECH-774',
+      activeLocationId: 'LOC-HALL1-A01',
+      selectedCategory: 'All',
+      manifestQueue: [],
+      
+      // Dual Directory Storage System
+      storage: {
+        rootHandle: null,
+        catalogsLocalHandle: null,
+        materialsLocalHandle: null,
+        catalogsSharedHandle: null,
+        materialsSharedHandle: null,
+        isConnected: false
+      },
+
+      // Catalog Definitions
+      catalog: [
+        {
+          sku: "FBR-LC-LC-OM4-3M",
+          name: "Fiber Patch LC-LC OM4 3m Aqua",
+          category: "Fiber Cabling",
+          vendorBarcode: "01088712398412",
+          uom: "EA",
+          unitsPerCarton: 10,
+          cartonsPerBox: 5,
+          minThreshold: 20,
+          defaultLocationId: "LOC-HALL1-A01"
+        },
+        {
+          sku: "FBR-LC-LC-SM-5M",
+          name: "Fiber Patch LC-LC OS2 Single-Mode 5m Yellow",
+          category: "Fiber Cabling",
+          vendorBarcode: "01088712398999",
+          uom: "EA",
+          unitsPerCarton: 10,
+          cartonsPerBox: 5,
+          minThreshold: 15,
+          defaultLocationId: "LOC-HALL1-A01"
+        },
+        {
+          sku: "OPT-10G-SR-SFP",
+          name: "10GBASE-SR SFP+ 850nm Transceiver",
+          category: "Optics",
+          vendorBarcode: "889523001928",
+          uom: "EA",
+          unitsPerCarton: 10,
+          cartonsPerBox: 10,
+          minThreshold: 30,
+          defaultLocationId: "LOC-STOR-OPT01"
+        },
+        {
+          sku: "OPT-100G-SR4-QSFP28",
+          name: "100GBASE-SR4 QSFP28 Transceiver",
+          category: "Optics",
+          vendorBarcode: "889523004455",
+          uom: "EA",
+          unitsPerCarton: 5,
+          cartonsPerBox: 4,
+          minThreshold: 10,
+          defaultLocationId: "LOC-STOR-OPT01"
+        },
+        {
+          sku: "LBL-FBR-FLAG-ROLL",
+          name: "Self-Laminating Fiber Flag Labels (Roll of 250)",
+          category: "Labels",
+          vendorBarcode: "772341992011",
+          uom: "ROLL",
+          unitsPerCarton: 4,
+          cartonsPerBox: 6,
+          minThreshold: 8,
+          defaultLocationId: "LOC-ADMIN-SH1"
+        },
+        {
+          sku: "LOCK-COMBO-RACK-01",
+          name: "Server Cabinet Combination Cam Lock",
+          category: "Cabinet Locks",
+          vendorBarcode: "664319881120",
+          uom: "EA",
+          unitsPerCarton: 12,
+          cartonsPerBox: 4,
+          minThreshold: 10,
+          defaultLocationId: "LOC-STOR-HW12"
+        },
+        {
+          sku: "AIR-BLANKING-1U-BLK",
+          name: "1U Snap-In Toolless Blanking Panels",
+          category: "Air Containment",
+          vendorBarcode: "553198229100",
+          uom: "EA",
+          unitsPerCarton: 10,
+          cartonsPerBox: 5,
+          minThreshold: 25,
+          defaultLocationId: "LOC-INBOUND-DOCK"
+        }
+      ],
+
+      // Location Hierarchy
+      locations: [
+        { id: "LOC-INBOUND-DOCK", site: "DC-01 (DFW)", room: "Inbound Staging", zone: "Dock Receiving Cage", barcode: "LOC-INBOUND-DOCK" },
+        { id: "LOC-HALL1-A01", site: "DC-01 (DFW)", room: "Data Hall 1", zone: "Row 02 - Rack 04 - Bin A", barcode: "LOC-HALL1-A01" },
+        { id: "LOC-HALL2-C14", site: "DC-01 (DFW)", room: "Data Hall 2", zone: "Row 14 - EPS Frame Bin", barcode: "LOC-HALL2-C14" },
+        { id: "LOC-STOR-OPT01", site: "DC-01 (DFW)", room: "Storage Room 102", zone: "Optics Secure Cabinet - Bin 4", barcode: "LOC-STOR-OPT01" },
+        { id: "LOC-STOR-HW12", site: "DC-01 (DFW)", room: "Storage Room 102", zone: "Hardware Spares - Bin 12", barcode: "LOC-STOR-HW12" },
+        { id: "LOC-ADMIN-SH1", site: "DC-01 (DFW)", room: "Admin Tech Office", zone: "Supply Cabinet - Shelf 1", barcode: "LOC-ADMIN-SH1" }
+      ],
+
+      // Transaction Ledger Events
+      events: []
+    };
+
+    const now = Date.now();
+    STATE.events = [
+      { id: "EVT-1001", type: "RECEIVED", sku: "FBR-LC-LC-OM4-3M", delta: 120, packagingTier: "BOX", locationId: "LOC-INBOUND-DOCK", techId: "SYSTEM", timestamp: new Date(now - 86400000 * 5).toISOString() },
+      { id: "EVT-1002", type: "STORED", sku: "FBR-LC-LC-OM4-3M", delta: 80, packagingTier: "CARTON", locationId: "LOC-HALL1-A01", techId: "TECH-774", timestamp: new Date(now - 86400000 * 3).toISOString() },
+      { id: "EVT-1003", type: "CONSUMED", sku: "FBR-LC-LC-OM4-3M", delta: -6, packagingTier: "ITEM", locationId: "LOC-HALL1-A01", techId: "TECH-774", reason: "Decom CR Patching", timestamp: new Date(now - 3600000 * 4).toISOString() },
+      { id: "EVT-1004", type: "RECEIVED", sku: "OPT-10G-SR-SFP", delta: 100, packagingTier: "BOX", locationId: "LOC-INBOUND-DOCK", techId: "TECH-774", timestamp: new Date(now - 86400000 * 4).toISOString() },
+      { id: "EVT-1005", type: "STORED", sku: "OPT-10G-SR-SFP", delta: 60, packagingTier: "CARTON", locationId: "LOC-STOR-OPT01", techId: "TECH-774", timestamp: new Date(now - 86400000 * 2).toISOString() },
+      { id: "EVT-1006", type: "CONSUMED", sku: "OPT-10G-SR-SFP", delta: -4, packagingTier: "ITEM", locationId: "LOC-STOR-OPT01", techId: "TECH-774", timestamp: new Date(now - 3600000 * 8).toISOString() },
+      { id: "EVT-1007", type: "RECEIVED", sku: "AIR-BLANKING-1U-BLK", delta: 50, packagingTier: "BOX", locationId: "LOC-INBOUND-DOCK", techId: "SYSTEM", timestamp: new Date(now - 86400000 * 4).toISOString() },
+      { id: "EVT-1008", type: "STORED", sku: "AIR-BLANKING-1U-BLK", delta: 40, packagingTier: "CARTON", locationId: "LOC-HALL1-A01", techId: "TECH-774", timestamp: new Date(now - 86400000 * 1).toISOString() },
+      { id: "EVT-1009", type: "CONSUMED", sku: "AIR-BLANKING-1U-BLK", delta: -10, packagingTier: "CARTON", locationId: "LOC-HALL1-A01", techId: "TECH-774", reason: "Containment aisle build", timestamp: new Date(now - 3600000 * 2).toISOString() },
+      { id: "EVT-1010", type: "RECEIVED", sku: "LBL-FBR-FLAG-ROLL", delta: 16, packagingTier: "CARTON", locationId: "LOC-ADMIN-SH1", techId: "SYSTEM", timestamp: new Date(now - 86400000 * 6).toISOString() },
+      { id: "EVT-1011", type: "CONSUMED", sku: "LBL-FBR-FLAG-ROLL", delta: -2, packagingTier: "ITEM", locationId: "LOC-ADMIN-SH1", techId: "TECH-774", reason: "Cabling labeling", timestamp: new Date(now - 3600000 * 14).toISOString() },
+      { id: "EVT-1012", type: "RECEIVED", sku: "LOCK-COMBO-RACK-01", delta: 24, packagingTier: "CARTON", locationId: "LOC-STOR-HW12", techId: "SYSTEM", timestamp: new Date(now - 86400000 * 3).toISOString() }
+    ];
+
+    async function handleConnectDualStorage() {
+      try {
+        if (!('showDirectoryPicker' in window)) {
+          showToast("File System API not supported in this frame. Falling back to persistent browser storage.", "info");
+          saveToLocalStorage();
+          updateStorageStatusUI(true, "Local & Shared Storage Active");
+          return;
+        }
+
+        // Request root workspace directory
+        const rootHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        STATE.storage.rootHandle = rootHandle;
+
+        // Create or bind the required local and shared folder pairs
+        STATE.storage.catalogsLocalHandle = await rootHandle.getDirectoryHandle('catalogs_local', { create: true });
+        STATE.storage.materialsLocalHandle = await rootHandle.getDirectoryHandle('materials_local', { create: true });
+        STATE.storage.catalogsSharedHandle = await rootHandle.getDirectoryHandle('catalogs_shared', { create: true });
+        STATE.storage.materialsSharedHandle = await rootHandle.getDirectoryHandle('materials_shared', { create: true });
+
+        // Synchronize existing definitions into both directories
+        await writeDualFile('catalogs_local', 'catalogs_shared', 'catalog_items.json', STATE.catalog);
+        await writeDualFile('catalogs_local', 'catalogs_shared', 'locations.json', STATE.locations);
+
+        updateStorageStatusUI(true, `✓ Synced: ${rootHandle.name}`);
+        showToast(`Connected: catalogs_local/shared & materials_local/shared ready.`, "success");
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.warn("Storage connection notification:", err);
+          saveToLocalStorage();
+          updateStorageStatusUI(true, "Local Cache Active");
+          showToast("Browser persistent storage enabled.", "info");
+        }
+      }
+    }
+
+    function updateStorageStatusUI(connected, label) {
+      STATE.storage.isConnected = connected;
+      const btn = document.getElementById('connectStorageBtn');
+      const text = document.getElementById('storageBtnText');
+      if (text) text.textContent = label;
+      if (connected && btn) {
+        btn.classList.replace('bg-amber-500/10', 'bg-emerald-500/10');
+        btn.classList.replace('border-amber-500/40', 'border-emerald-500/40');
+        btn.classList.replace('text-amber-300', 'text-emerald-300');
+      }
+    }
+
+    async function writeDualFile(localDirKey, sharedDirKey, filename, data) {
+      const payloadStr = JSON.stringify(data, null, 2);
+
+      // Write to Local folder handle
+      const localDir = STATE.storage[localDirKey + 'Handle'];
+      if (localDir) {
+        try {
+          const fileHandle = await localDir.getFileHandle(filename, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(payloadStr);
+          await writable.close();
+        } catch (e) {
+          console.warn(`Write failure in ${localDirKey}:`, e);
+        }
+      }
+
+      // Write to Shared folder handle
+      const sharedDir = STATE.storage[sharedDirKey + 'Handle'];
+      if (sharedDir) {
+        try {
+          const fileHandle = await sharedDir.getFileHandle(filename, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(payloadStr);
+          await writable.close();
+        } catch (e) {
+          console.warn(`Write failure in ${sharedDirKey}:`, e);
+        }
+      }
+    }
+
+    async function appendAtomicMaterialEvent(eventData) {
+      STATE.events.push(eventData);
+      saveToLocalStorage();
+
+      // Write individual atomic transaction receipt to materials_local and materials_shared
+      const timestamp = Date.now();
+      const rand = Math.random().toString(36).substring(2, 7);
+      const filename = `${timestamp}_${rand}_${eventData.type}_${eventData.sku || 'BATCH'}.json`;
+
+      await writeDualFile('materials_local', 'materials_shared', filename, eventData);
+
+      renderDashboardTable();
+      renderLedgerTable();
+      updateInventoryChart();
+    }
+
+    function saveToLocalStorage() {
+      localStorage.setItem('DC_VAULT_CATALOG_LOCAL', JSON.stringify(STATE.catalog));
+      localStorage.setItem('DC_VAULT_CATALOG_SHARED', JSON.stringify(STATE.catalog));
+      localStorage.setItem('DC_VAULT_LOCATIONS_LOCAL', JSON.stringify(STATE.locations));
+      localStorage.setItem('DC_VAULT_LOCATIONS_SHARED', JSON.stringify(STATE.locations));
+      localStorage.setItem('DC_VAULT_MATERIALS_EVENTS', JSON.stringify(STATE.events));
+    }
+
+    function loadFromLocalStorage() {
+      const c = localStorage.getItem('DC_VAULT_CATALOG_LOCAL') || localStorage.getItem('DC_VAULT_CATALOG_SHARED');
+      const l = localStorage.getItem('DC_VAULT_LOCATIONS_LOCAL') || localStorage.getItem('DC_VAULT_LOCATIONS_SHARED');
+      const e = localStorage.getItem('DC_VAULT_MATERIALS_EVENTS');
+      if (c) STATE.catalog = JSON.parse(c);
+      if (l) STATE.locations = JSON.parse(l);
+      if (e) STATE.events = JSON.parse(e);
+    }
+
+    function calculateStockMatrix() {
+      const matrix = {};
+
+      STATE.catalog.forEach(item => {
+        matrix[item.sku] = {
+          total: 0,
+          byLocation: {},
+          consumedHistory: [],
+          receivedHistory: [],
+          storedHistory: []
+        };
+      });
+
+      STATE.events.forEach(evt => {
+        const { type, sku, delta, locationId, timestamp } = evt;
+
+        if (type === 'RECEIVED' || type === 'STORED' || type === 'CONSUMED' || type === 'INVENTORY_ADJUST') {
+          if (!matrix[sku]) {
+            matrix[sku] = { total: 0, byLocation: {}, consumedHistory: [], receivedHistory: [], storedHistory: [] };
+          }
+          matrix[sku].total += delta;
+          matrix[sku].byLocation[locationId] = (matrix[sku].byLocation[locationId] || 0) + delta;
+
+          const timeVal = new Date(timestamp).getTime();
+
+          if (delta < 0 || type === 'CONSUMED') {
+            matrix[sku].consumedHistory.push({ count: Math.abs(delta), timestamp: timeVal, locationId });
+          } else if (type === 'RECEIVED') {
+            matrix[sku].receivedHistory.push({ count: delta, timestamp: timeVal, locationId });
+          } else if (type === 'STORED') {
+            matrix[sku].storedHistory.push({ count: delta, timestamp: timeVal, locationId });
+          }
+        } else if (type === 'MASS_RELOCATE') {
+          const { sourceLocationId, targetLocationId, transfers } = evt;
+          transfers.forEach(({ sku: mSku, count }) => {
+            if (matrix[mSku]) {
+              matrix[mSku].byLocation[sourceLocationId] = (matrix[mSku].byLocation[sourceLocationId] || 0) - count;
+              matrix[mSku].byLocation[targetLocationId] = (matrix[mSku].byLocation[targetLocationId] || 0) + count;
+            }
+          });
+        }
+      });
+
+      return matrix;
+    }
+
+    function getMetricInWindow(historyArray, hours, locationFilter = 'ALL') {
+      const cutoff = Date.now() - (hours * 3600000);
+      return historyArray
+        .filter(c => c.timestamp >= cutoff && (locationFilter === 'ALL' || c.locationId === locationFilter))
+        .reduce((acc, c) => acc + c.count, 0);
+    }
+
+    let scanBuffer = "";
+    let lastKeyTime = 0;
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === "Shift" || e.key === "Control" || e.key === "Alt" || e.key === "Meta") return;
+      
+      const activeEl = document.activeElement;
+      const isInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT' || activeEl.tagName === 'TEXTAREA');
+
+      const currentTime = performance.now();
+      const delta = currentTime - lastKeyTime;
+      lastKeyTime = currentTime;
+
+      // Reset buffer if standard user typing delay (>60ms) detected outside inputs
+      if (delta > 60 && !isInput) {
+        scanBuffer = "";
+      }
+
+      if (e.key === "Enter") {
+        if (scanBuffer.length >= 3) {
+          e.preventDefault();
+          executeBarcodeResolution(scanBuffer.trim());
+          scanBuffer = "";
+        }
+      } else if (e.key.length === 1 && !isInput) {
+        scanBuffer += e.key;
+      }
+    });
+
+    function triggerManualSimulatedScan() {
+      const input = document.getElementById('manualBarcodeInput');
+      const val = input.value.trim();
+      if (!val) return;
+      executeBarcodeResolution(val);
+      input.value = "";
+    }
+
+    document.getElementById('manualBarcodeInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') triggerManualSimulatedScan();
+    });
+
+    function executeBarcodeResolution(rawBarcode) {
+      const term = rawBarcode.trim();
+      const banner = document.getElementById('scannerBanner');
+      const actionButtons = document.getElementById('scannerActionButtons');
+
+      // 1. Check if scan matches Location Hierarchy Barcode
+      const matchedLoc = STATE.locations.find(l => 
+        l.barcode.toLowerCase() === term.toLowerCase() || 
+        l.id.toLowerCase() === term.toLowerCase()
+      );
+
+      if (matchedLoc) {
+        setActiveLocation(matchedLoc.id);
+        banner.classList.remove('hidden');
+        
+        document.getElementById('scannedCategoryBadge').textContent = "LOCATION LOCKED";
+        document.getElementById('scannedCategoryBadge').className = "text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800";
+        document.getElementById('scannedItemName').textContent = `${matchedLoc.room} • ${matchedLoc.zone}`;
+        document.getElementById('scannedSkuText').textContent = matchedLoc.id;
+        document.getElementById('scannedLocationTarget').textContent = matchedLoc.site;
+        document.getElementById('scannedStockCount').textContent = "READY FOR INGEST / DEPLOY";
+
+        actionButtons.innerHTML = `
+          <button onclick="dismissScannerBanner()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-semibold">
+            Dismiss
+          </button>
+        `;
+
+        showToast(`Work zone locked to: ${matchedLoc.room} (${matchedLoc.id})`, "success");
+        return;
+      }
+
+      // 2. Check if matches Item SKU or OEM Vendor Barcode
+      const matchedItem = STATE.catalog.find(i => 
+        i.sku.toLowerCase() === term.toLowerCase() || 
+        (i.vendorBarcode && i.vendorBarcode.toLowerCase() === term.toLowerCase())
+      );
+
+      if (matchedItem) {
+        const matrix = calculateStockMatrix();
+        const currentStock = matrix[matchedItem.sku]?.total || 0;
+        const cartonUnits = matchedItem.unitsPerCarton || 1;
+        const boxUnits = cartonUnits * (matchedItem.cartonsPerBox || 1);
+
+        banner.classList.remove('hidden');
+        document.getElementById('scannedCategoryBadge').textContent = matchedItem.category;
+        document.getElementById('scannedCategoryBadge').className = "text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800";
+        document.getElementById('scannedItemName').textContent = matchedItem.name;
+        document.getElementById('scannedSkuText').textContent = matchedItem.sku;
+        document.getElementById('scannedLocationTarget').textContent = STATE.activeLocationId;
+        document.getElementById('scannedStockCount').textContent = `${currentStock} ${matchedItem.uom}`;
+
+        // Ingest buttons: Item, Carton (if > 1), Box (if > 1) across Stored, Received, and Consumed
+        actionButtons.innerHTML = `
+          <!-- Consumed -->
+          <div class="inline-flex rounded-lg border border-rose-800/60 bg-rose-950/40 p-0.5">
+            <button onclick="recordQuickAdjustment('${matchedItem.sku}', -1, 'CONSUMED', 'ITEM', 'Unit Deploy')" class="hover:bg-rose-600 text-rose-200 px-2.5 py-1 rounded text-xs font-bold transition">
+              Consume -1
+            </button>
+            ${cartonUnits > 1 ? `
+              <button onclick="recordQuickAdjustment('${matchedItem.sku}', -${cartonUnits}, 'CONSUMED', 'CARTON', 'Carton Deploy')" class="hover:bg-rose-600 text-rose-200 px-2 py-1 rounded text-[11px] font-bold transition border-l border-rose-800/60">
+                -Ctn (${cartonUnits})
+              </button>
+            ` : ''}
+          </div>
+
+          <!-- Stored / Bin Ingest -->
+          <div class="inline-flex rounded-lg border border-sky-800/60 bg-sky-950/40 p-0.5">
+            <button onclick="recordQuickAdjustment('${matchedItem.sku}', 1, 'STORED', 'ITEM', 'Unit Bin Putaway')" class="hover:bg-sky-600 text-sky-200 px-2.5 py-1 rounded text-xs font-bold transition">
+              Store +1
+            </button>
+            ${cartonUnits > 1 ? `
+              <button onclick="recordQuickAdjustment('${matchedItem.sku}', ${cartonUnits}, 'STORED', 'CARTON', 'Carton Bin Putaway')" class="hover:bg-sky-600 text-sky-200 px-2 py-1 rounded text-[11px] font-bold transition border-l border-sky-800/60">
+                +Ctn (${cartonUnits})
+              </button>
+            ` : ''}
+            ${boxUnits > 1 ? `
+              <button onclick="recordQuickAdjustment('${matchedItem.sku}', ${boxUnits}, 'STORED', 'BOX', 'Box Bin Putaway')" class="hover:bg-sky-600 text-sky-200 px-2 py-1 rounded text-[11px] font-bold transition border-l border-sky-800/60">
+                +Box (${boxUnits})
+              </button>
+            ` : ''}
+          </div>
+
+          <!-- Received / Inbound Dock Ingest -->
+          <div class="inline-flex rounded-lg border border-emerald-800/60 bg-emerald-950/40 p-0.5">
+            <button onclick="recordQuickAdjustment('${matchedItem.sku}', 1, 'RECEIVED', 'ITEM', 'Unit Received Inbound')" class="hover:bg-emerald-600 text-emerald-200 px-2.5 py-1 rounded text-xs font-bold transition">
+              Receive +1
+            </button>
+            ${cartonUnits > 1 ? `
+              <button onclick="recordQuickAdjustment('${matchedItem.sku}', ${cartonUnits}, 'RECEIVED', 'CARTON', 'Carton Received Inbound')" class="hover:bg-emerald-600 text-emerald-200 px-2 py-1 rounded text-[11px] font-bold transition border-l border-emerald-800/60">
+                +Ctn (${cartonUnits})
+              </button>
+            ` : ''}
+            ${boxUnits > 1 ? `
+              <button onclick="recordQuickAdjustment('${matchedItem.sku}', ${boxUnits}, 'RECEIVED', 'BOX', 'Box Received Inbound')" class="hover:bg-emerald-600 text-emerald-200 px-2 py-1 rounded text-[11px] font-bold transition border-l border-emerald-800/60">
+                +Box (${boxUnits})
+              </button>
+            ` : ''}
+          </div>
+
+          <button onclick="dismissScannerBanner()" class="bg-slate-800 hover:bg-slate-700 text-slate-400 px-2 py-1 rounded-lg text-xs">
+            &times;
+          </button>
+        `;
+
+        showToast(`Recognized: ${matchedItem.name}`, "info");
+        return;
+      }
+
+      // 3. Unrecognized Barcode
+      banner.classList.remove('hidden');
+      document.getElementById('scannedCategoryBadge').textContent = "UNKNOWN CODE";
+      document.getElementById('scannedCategoryBadge').className = "text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800";
+      document.getElementById('scannedItemName').textContent = "Unregistered Barcode Scanned";
+      document.getElementById('scannedSkuText').textContent = term;
+      document.getElementById('scannedLocationTarget').textContent = "N/A";
+      document.getElementById('scannedStockCount').textContent = "0";
+
+      actionButtons.innerHTML = `
+        <button onclick="prefillNewCatalogItem('${term}')" class="bg-sky-600 hover:bg-sky-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs">
+          + Register New SKU
+        </button>
+        <button onclick="dismissScannerBanner()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs">
+          Dismiss
+        </button>
+      `;
+      showToast(`Unrecognized barcode: ${term}`, "error");
+    }
+
+    function dismissScannerBanner() {
+      document.getElementById('scannerBanner').classList.add('hidden');
+    }
+
+    function setActiveLocation(locId) {
+      STATE.activeLocationId = locId;
+      const select = document.getElementById('headerActiveLocationSelect');
+      if (select) select.value = locId;
+      const bannerTarget = document.getElementById('scannedLocationTarget');
+      if (bannerTarget) bannerTarget.textContent = locId;
+    }
+
+    function syncTechId(val) {
+      STATE.techId = val.trim() || 'TECH-774';
+      const mobileBadge = document.getElementById('mobileTechBadge');
+      if (mobileBadge) mobileBadge.textContent = STATE.techId;
+    }
+
+    async function recordQuickAdjustment(sku, delta, actionType, packagingTier, reason) {
+      const activeTech = document.getElementById('techIdInput')?.value || STATE.techId;
+      
+      const newEvent = {
+        id: "EVT-" + Date.now().toString().slice(-6),
+        type: actionType, // STORED, RECEIVED, CONSUMED
+        sku,
+        delta: parseInt(delta, 10),
+        packagingTier: packagingTier || "ITEM",
+        locationId: STATE.activeLocationId,
+        techId: activeTech,
+        reason: reason || `${actionType} via Scanner Wedge`,
+        timestamp: new Date().toISOString()
+      };
+
+      await appendAtomicMaterialEvent(newEvent);
+      
+      // Update badge in banner if still visible
+      const matrix = calculateStockMatrix();
+      const updatedTotal = matrix[sku]?.total || 0;
+      const stockBadge = document.getElementById('scannedStockCount');
+      if (stockBadge) stockBadge.textContent = `${updatedTotal} EA`;
+
+      showToast(`${actionType}: ${delta > 0 ? '+' + delta : delta} (${sku} at ${STATE.activeLocationId})`, delta > 0 ? "success" : "info");
+    }
+
+    let inventoryChartInstance = null;
+
+    function initInventoryChart() {
+      const canvas = document.getElementById('inventoryTrendCanvas');
+      if (!canvas) return;
+
+      const ctx = canvas.getContext('2d');
+      if (inventoryChartInstance) inventoryChartInstance.destroy();
+
+      inventoryChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Net Quantity Balance',
+              data: [],
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.15)',
+              borderWidth: 2.5,
+              tension: 0.25,
+              fill: true,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Cumulative Received',
+              data: [],
+              borderColor: '#34d399',
+              borderDash: [5, 5],
+              borderWidth: 2,
+              tension: 0.1,
+              fill: false,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Cumulative Consumed',
+              data: [],
+              borderColor: '#f87171',
+              borderDash: [3, 3],
+              borderWidth: 2,
+              tension: 0.1,
+              fill: false,
+              yAxisID: 'y'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: '#94a3b8',
+                font: { family: 'Inter', size: 11, weight: '600' }
+              }
+            },
+            tooltip: {
+              backgroundColor: '#0f172a',
+              titleColor: '#38bdf8',
+              bodyColor: '#e2e8f0',
+              borderColor: '#334155',
+              borderWidth: 1,
+              padding: 10,
+              displayColors: true
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(51, 65, 85, 0.3)' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } }
+            },
+            y: {
+              grid: { color: 'rgba(51, 65, 85, 0.4)' },
+              ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } },
+              title: {
+                display: true,
+                text: 'Physical Units (EA)',
+                color: '#64748b',
+                font: { size: 10, weight: 'bold' }
+              }
+            }
+          }
+        }
+      });
+
+      populateChartDropdowns();
+      updateInventoryChart();
+    }
+
+    function populateChartDropdowns() {
+      const itemSelect = document.getElementById('chartItemFilter');
+      const locSelect = document.getElementById('chartLocationFilter');
+
+      if (itemSelect) {
+        const current = itemSelect.value;
+        itemSelect.innerHTML = `<option value="ALL">All Materials (Aggregate)</option>` +
+          STATE.catalog.map(i => `<option value="${i.sku}">${i.name} (${i.sku})</option>`).join('');
+        if (current) itemSelect.value = current;
+      }
+
+      if (locSelect) {
+        const currentLoc = locSelect.value;
+        locSelect.innerHTML = `<option value="ALL">All Locations Combined</option>` +
+          STATE.locations.map(l => `<option value="${l.id}">${l.room} - ${l.zone} (${l.id})</option>`).join('');
+        if (currentLoc) locSelect.value = currentLoc;
+      }
+    }
+
+    function updateInventoryChart() {
+      if (!inventoryChartInstance) return;
+
+      const itemFilter = document.getElementById('chartItemFilter')?.value || 'ALL';
+      const locFilter = document.getElementById('chartLocationFilter')?.value || 'ALL';
+      const windowFilter = document.getElementById('chartTimeWindowFilter')?.value || '7d';
+
+      let hours = 168; // default 7 days
+      if (windowFilter === '24h') hours = 24;
+      if (windowFilter === '30d') hours = 720;
+
+      const cutoffTime = Date.now() - (hours * 3600000);
+      const points = 8;
+      const stepMs = (hours * 3600000) / points;
+
+      const timeLabels = [];
+      const stockTrend = [];
+      const receivedTrend = [];
+      const consumedTrend = [];
+
+      // Sort relevant historical events
+      const relevantEvents = STATE.events.filter(e => {
+        const matchItem = itemFilter === 'ALL' || e.sku === itemFilter || (e.transfers && e.transfers.some(t => t.sku === itemFilter));
+        const matchLoc = locFilter === 'ALL' || e.locationId === locFilter || e.sourceLocationId === locFilter || e.targetLocationId === locFilter;
+        return matchItem && matchLoc;
+      });
+
+      // Sample along intervals
+      for (let i = 0; i <= points; i++) {
+        const sampleTimestamp = cutoffTime + (i * stepMs);
+        const dateObj = new Date(sampleTimestamp);
+        
+        let label = dateObj.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+        if (hours <= 24) {
+          label = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        timeLabels.push(label);
+
+        // Replay events up to sampleTimestamp
+        let netQty = 0;
+        let cumRec = 0;
+        let cumCons = 0;
+
+        relevantEvents.forEach(evt => {
+          if (new Date(evt.timestamp).getTime() <= sampleTimestamp) {
+            if (evt.type === 'RECEIVED' || evt.type === 'STORED' || evt.type === 'CONSUMED' || evt.type === 'INVENTORY_ADJUST') {
+              if (itemFilter === 'ALL' || evt.sku === itemFilter) {
+                if (locFilter === 'ALL' || evt.locationId === locFilter) {
+                  netQty += evt.delta;
+                  if (evt.type === 'RECEIVED' || evt.delta > 0) cumRec += evt.delta;
+                  if (evt.type === 'CONSUMED' || evt.delta < 0) cumCons += Math.abs(evt.delta);
+                }
+              }
+            } else if (evt.type === 'MASS_RELOCATE') {
+              evt.transfers.forEach(t => {
+                if (itemFilter === 'ALL' || t.sku === itemFilter) {
+                  if (locFilter !== 'ALL') {
+                    if (evt.targetLocationId === locFilter) netQty += t.count;
+                    if (evt.sourceLocationId === locFilter) netQty -= t.count;
+                  }
+                }
+              });
+            }
+          }
+        });
+
+        stockTrend.push(netQty);
+        receivedTrend.push(cumRec);
+        consumedTrend.push(cumCons);
+      }
+
+      inventoryChartInstance.data.labels = timeLabels;
+      inventoryChartInstance.data.datasets[0].data = stockTrend;
+      inventoryChartInstance.data.datasets[1].data = receivedTrend;
+      inventoryChartInstance.data.datasets[2].data = consumedTrend;
+      inventoryChartInstance.update();
+    }
+
+    function renderDashboardTable() {
+      const matrix = calculateStockMatrix();
+      const tbody = document.getElementById('dashboardTableBody');
+      const search = (document.getElementById('dashboardSearchInput')?.value || "").toLowerCase();
+      
+      // Update Top Macro Metrics
+      document.getElementById('metric-total-skus').textContent = STATE.catalog.length;
+      
+      let lowStockCount = 0;
+      let total24hConsumed = 0;
+      let total24hReceived = 0;
+
+      Object.entries(matrix).forEach(([sku, data]) => {
+        const item = STATE.catalog.find(i => i.sku === sku);
+        if (item && data.total < (item.minThreshold || 10)) {
+          lowStockCount++;
+        }
+        total24hConsumed += getMetricInWindow(data.consumedHistory, 24);
+        total24hReceived += getMetricInWindow(data.receivedHistory, 24);
+      });
+
+      document.getElementById('metric-low-stock').textContent = lowStockCount;
+      document.getElementById('metric-24h-consumption').textContent = total24hConsumed;
+      document.getElementById('metric-24h-received').textContent = total24hReceived;
+
+      // Filter Catalog Items
+      let filtered = STATE.catalog;
+      if (STATE.selectedCategory !== 'All') {
+        filtered = filtered.filter(i => i.category === STATE.selectedCategory);
+      }
+      if (search) {
+        filtered = filtered.filter(i => 
+          i.name.toLowerCase().includes(search) || 
+          i.sku.toLowerCase().includes(search) ||
+          (i.vendorBarcode && i.vendorBarcode.toLowerCase().includes(search))
+        );
+      }
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">No matching materials found in vault.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(item => {
+        const data = matrix[item.sku] || { total: 0, byLocation: {}, consumedHistory: [], receivedHistory: [] };
+        const rec24 = getMetricInWindow(data.receivedHistory, 24);
+        const cons24 = getMetricInWindow(data.consumedHistory, 24);
+        const cons7d = getMetricInWindow(data.consumedHistory, 168);
+        const isLow = data.total < (item.minThreshold || 10);
+
+        const assignedBins = Object.entries(data.byLocation).filter(([_, qty]) => qty > 0);
+        const cartonUnits = item.unitsPerCarton || 1;
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-3 px-4">
+              <div class="font-bold text-white text-xs">${item.name}</div>
+              <div class="text-[11px] font-mono text-sky-400 mt-0.5 flex flex-wrap items-center gap-1.5">
+                <span>${item.sku}</span>
+                <span class="text-slate-600">&bull;</span>
+                <span class="text-slate-400 font-sans">${item.category}</span>
+                ${item.vendorBarcode ? `<span class="text-slate-500 text-[10px]">OEM: ${item.vendorBarcode}</span>` : ''}
+              </div>
+            </td>
+            <td class="py-3 px-4">
+              ${assignedBins.length === 0 ? '<span class="text-slate-600 italic">No Stock Assigned</span>' : ''}
+              <div class="flex flex-wrap gap-1">
+                ${assignedBins.map(([loc, count]) => `
+                  <span class="bg-slate-950 px-2 py-0.5 rounded text-[10px] font-mono border border-slate-800">
+                    ${loc}: <strong class="text-sky-300">${count}</strong>
+                  </span>
+                `).join('')}
+              </div>
+            </td>
+            <td class="py-3 px-4 text-center font-mono">
+              <span class="font-extrabold text-sm ${isLow ? 'text-rose-400' : 'text-emerald-400'}">
+                ${data.total}
+              </span>
+              <span class="text-[10px] text-slate-500">${item.uom}</span>
+              ${isLow ? '<span class="block text-[8px] uppercase font-bold text-rose-500">Below Par</span>' : ''}
+            </td>
+            <td class="py-3 px-4 text-center font-mono text-emerald-300 font-semibold">${rec24}</td>
+            <td class="py-3 px-4 text-center font-mono text-amber-300 font-semibold">${cons24}</td>
+            <td class="py-3 px-4 text-center font-mono text-slate-400">${cons7d}</td>
+            <td class="py-3 px-4 text-right">
+              <div class="inline-flex rounded-lg border border-slate-700/80 bg-slate-950 p-0.5">
+                <button onclick="recordQuickAdjustment('${item.sku}', -1, 'CONSUMED', 'ITEM', 'Manual Consumption')" title="Consume -1 Unit" class="hover:bg-rose-600 text-slate-300 hover:text-white px-2 py-1 rounded text-[11px] font-bold transition">-1</button>
+                <button onclick="recordQuickAdjustment('${item.sku}', 1, 'STORED', 'ITEM', 'Manual Store')" title="Store +1 Unit" class="hover:bg-sky-600 text-slate-300 hover:text-white px-2 py-1 rounded text-[11px] font-bold transition border-l border-slate-800">+1</button>
+                <button onclick="recordQuickAdjustment('${item.sku}', ${cartonUnits}, 'STORED', 'CARTON', 'Manual Store Carton')" title="Store +1 Carton (${cartonUnits})" class="hover:bg-emerald-600 text-slate-300 hover:text-white px-2 py-1 rounded text-[10px] font-bold transition border-l border-slate-800">+Ctn</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderCategoryFilters() {
+      const container = document.getElementById('categoryFiltersContainer');
+      const categories = ['All', 'Fiber Cabling', 'Copper Cabling', 'Optics', 'Labels', 'Air Containment', 'Cabinet Locks', 'Hardware Spares'];
+      
+      container.innerHTML = categories.map(cat => `
+        <button onclick="selectCategoryFilter('${cat}')" class="px-2.5 py-1 rounded-md text-[11px] font-semibold transition ${STATE.selectedCategory === cat ? 'bg-sky-600 text-white shadow-sm' : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'}">
+          ${cat}
+        </button>
+      `).join('');
+    }
+
+    function selectCategoryFilter(cat) {
+      STATE.selectedCategory = cat;
+      renderCategoryFilters();
+      renderDashboardTable();
+    }
+
+    function renderCatalogTable() {
+      const tbody = document.getElementById('catalogTableBody');
+      const badge = document.getElementById('catalogCountBadge');
+      badge.textContent = `${STATE.catalog.length} SKUs`;
+
+      tbody.innerHTML = STATE.catalog.map(item => {
+        const cartonUnits = item.unitsPerCarton || 1;
+        const boxUnits = cartonUnits * (item.cartonsPerBox || 1);
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="py-2.5 px-3">
+              <span class="text-sky-400 font-bold">${item.sku}</span>
+              ${item.vendorBarcode ? `<div class="text-[10px] text-slate-500 font-sans">OEM: ${item.vendorBarcode}</div>` : ''}
+            </td>
+            <td class="py-2.5 px-3 font-sans">
+              <div class="font-bold text-white text-xs">${item.name}</div>
+              <div class="text-[10px] text-slate-400">${item.category} &bull; Par: ${item.minThreshold || 10} ${item.uom}</div>
+            </td>
+            <td class="py-2.5 px-3 text-[11px]">
+              <span class="text-slate-300">1 Ctn = <strong>${cartonUnits}</strong> EA</span> | 
+              <span class="text-slate-400">1 Box = <strong>${boxUnits}</strong> EA</span>
+            </td>
+            <td class="py-2.5 px-3 text-right font-sans">
+              <button onclick="openPrintModal('${item.sku}', '${item.name}', 'MATERIAL SKU TAG')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 font-semibold px-2.5 py-1 rounded text-xs transition">
+                Print Barcode
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Populate default location options in New Item form
+      const select = document.getElementById('newDefaultLocationSelect');
+      if (select) {
+        select.innerHTML = STATE.locations.map(l => `<option value="${l.id}">${l.room} - ${l.zone} (${l.id})</option>`).join('');
+      }
+    }
+
+    async function handleCreateCatalogItem(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const sku = fd.get('sku').trim().toUpperCase();
+
+      if (STATE.catalog.some(i => i.sku === sku)) {
+        showToast(`SKU '${sku}' already exists in catalog.`, "error");
+        return;
+      }
+
+      const newItem = {
+        sku,
+        name: fd.get('name').trim(),
+        vendorBarcode: fd.get('vendorBarcode').trim() || null,
+        category: fd.get('category'),
+        uom: "EA",
+        unitsPerCarton: parseInt(fd.get('unitsPerCarton'), 10) || 10,
+        cartonsPerBox: parseInt(fd.get('cartonsPerBox'), 10) || 5,
+        minThreshold: parseInt(fd.get('minThreshold'), 10) || 15,
+        defaultLocationId: fd.get('defaultLocationId')
+      };
+
+      STATE.catalog.push(newItem);
+      saveToLocalStorage();
+      await writeDualFile('catalogs_local', 'catalogs_shared', 'catalog_items.json', STATE.catalog);
+      
+      renderCatalogTable();
+      renderDashboardTable();
+      populateMassMoveDropdowns();
+      populateChartDropdowns();
+      e.target.reset();
+      showToast(`SKU ${sku} saved to catalogs_local and catalogs_shared.`, "success");
+    }
+
+    function prefillNewCatalogItem(unknownBarcode) {
+      switchView('catalog');
+      const input = document.getElementById('newVendorBarcodeInput');
+      if (input) input.value = unknownBarcode;
+    }
+
+    function renderLocationTable() {
+      const tbody = document.getElementById('locationTableBody');
+      const badge = document.getElementById('locationCountBadge');
+      badge.textContent = `${STATE.locations.length} Bins`;
+
+      tbody.innerHTML = STATE.locations.map(loc => `
+        <tr class="hover:bg-slate-800/30 transition">
+          <td class="py-2.5 px-3">
+            <span class="text-emerald-400 font-bold">${loc.barcode}</span>
+          </td>
+          <td class="py-2.5 px-3 font-sans">
+            <div class="font-bold text-white text-xs">${loc.room}</div>
+            <div class="text-[10px] text-slate-500">${loc.site}</div>
+          </td>
+          <td class="py-2.5 px-3 font-sans text-xs text-slate-300">
+            ${loc.zone}
+          </td>
+          <td class="py-2.5 px-3 text-right font-sans">
+            <button onclick="openPrintModal('${loc.barcode}', '${loc.room} [${loc.zone}]', 'SHELF LOCATION BARCODE')" class="bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 font-semibold px-2.5 py-1 rounded text-xs transition">
+              Print Bin Tag
+            </button>
+          </td>
+        </tr>
+      `).join('');
+
+      // Populate header active location dropdown
+      const headerSelect = document.getElementById('headerActiveLocationSelect');
+      if (headerSelect) {
+        headerSelect.innerHTML = STATE.locations.map(l => `<option value="${l.id}">${l.id} (${l.room})</option>`).join('');
+        headerSelect.value = STATE.activeLocationId;
+      }
+    }
+
+    async function handleCreateLocation(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const id = fd.get('id').trim().toUpperCase();
+
+      if (STATE.locations.some(l => l.id === id || l.barcode === id)) {
+        showToast(`Location ID '${id}' already registered.`, "error");
+        return;
+      }
+
+      const newLoc = {
+        id,
+        site: fd.get('site').trim(),
+        room: fd.get('room').trim(),
+        zone: fd.get('zone').trim(),
+        barcode: id
+      };
+
+      STATE.locations.push(newLoc);
+      saveToLocalStorage();
+      await writeDualFile('catalogs_local', 'catalogs_shared', 'locations.json', STATE.locations);
+      
+      renderLocationTable();
+      populateMassMoveDropdowns();
+      populateChartDropdowns();
+      e.target.reset();
+      showToast(`Location ${id} saved to catalogs_local and catalogs_shared.`, "success");
+    }
+
+    function populateMassMoveDropdowns() {
+      const src = document.getElementById('massMoveSourceSelect');
+      const tgt = document.getElementById('massMoveTargetSelect');
+      const itemSelect = document.getElementById('massMoveItemSelect');
+
+      if (!src || !tgt || !itemSelect) return;
+
+      const locOptions = STATE.locations.map(l => `<option value="${l.id}">${l.room} - ${l.zone} (${l.id})</option>`).join('');
+      src.innerHTML = locOptions;
+      tgt.innerHTML = locOptions;
+
+      if (STATE.locations.length > 1) {
+        tgt.selectedIndex = 1;
+      }
+
+      itemSelect.innerHTML = STATE.catalog.map(i => `<option value="${i.sku}">${i.name} (${i.sku})</option>`).join('');
+      refreshMassMoveAvailableItems();
+    }
+
+    function refreshMassMoveAvailableItems() {
+      const srcId = document.getElementById('massMoveSourceSelect')?.value;
+      const matrix = calculateStockMatrix();
+      const itemSku = document.getElementById('massMoveItemSelect')?.value;
+      
+      const available = matrix[itemSku]?.byLocation[srcId] || 0;
+      const label = document.getElementById('sourceAvailableStockNotice');
+      if (label) label.textContent = `Available at source: ${available} EA`;
+    }
+
+    function addStageItemToManifest() {
+      const itemSku = document.getElementById('massMoveItemSelect').value;
+      const count = parseInt(document.getElementById('massMoveQtyInput').value, 10);
+      const srcId = document.getElementById('massMoveSourceSelect').value;
+      
+      if (!count || count <= 0) {
+        showToast("Enter a valid quantity greater than zero.", "error");
+        return;
+      }
+
+      const matrix = calculateStockMatrix();
+      const available = matrix[itemSku]?.byLocation[srcId] || 0;
+
+      if (count > available) {
+        showToast(`Warning: Requested ${count} exceeds on-hand balance (${available}) at source.`, "error");
+        return;
+      }
+
+      const item = STATE.catalog.find(i => i.sku === itemSku);
+      STATE.manifestQueue.push({
+        sku: itemSku,
+        name: item.name,
+        count
+      });
+
+      renderManifestTable();
+    }
+
+    function renderManifestTable() {
+      const tbody = document.getElementById('massMoveManifestBody');
+      if (STATE.manifestQueue.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-500 font-sans">No items added to relocation manifest yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = STATE.manifestQueue.map((entry, idx) => `
+        <tr class="hover:bg-slate-800/40">
+          <td class="py-2.5 px-4 text-sky-400 font-bold">${entry.sku}</td>
+          <td class="py-2.5 px-4 font-sans text-xs text-slate-300">${entry.name}</td>
+          <td class="py-2.5 px-4 text-center font-bold text-white">${entry.count}</td>
+          <td class="py-2.5 px-4 text-right font-sans">
+            <button onclick="removeManifestItem(${idx})" class="text-rose-400 hover:text-rose-300 font-semibold text-xs">Remove</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function removeManifestItem(idx) {
+      STATE.manifestQueue.splice(idx, 1);
+      renderManifestTable();
+    }
+
+    async function commitMassRelocation() {
+      if (STATE.manifestQueue.length === 0) {
+        showToast("Manifest is empty. Add items before committing.", "error");
+        return;
+      }
+
+      const src = document.getElementById('massMoveSourceSelect').value;
+      const tgt = document.getElementById('massMoveTargetSelect').value;
+
+      if (src === tgt) {
+        showToast("Source and Target location bins cannot be identical.", "error");
+        return;
+      }
+
+      const activeTech = document.getElementById('techIdInput')?.value || STATE.techId;
+      const moveEvent = {
+        id: "RELOC-" + Date.now().toString().slice(-6),
+        type: "MASS_RELOCATE",
+        sourceLocationId: src,
+        targetLocationId: tgt,
+        transfers: STATE.manifestQueue.map(m => ({ sku: m.sku, count: m.count })),
+        techId: activeTech,
+        timestamp: new Date().toISOString()
+      };
+
+      await appendAtomicMaterialEvent(moveEvent);
+      STATE.manifestQueue = [];
+      renderManifestTable();
+      refreshMassMoveAvailableItems();
+      showToast("Mass relocation committed to materials_local and materials_shared.", "success");
+    }
+
+    function renderLedgerTable() {
+      const tbody = document.getElementById('ledgerTableBody');
+      const sorted = [...STATE.events].reverse();
+
+      tbody.innerHTML = sorted.map(e => {
+        const time = new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const date = new Date(e.timestamp).toLocaleDateString();
+
+        let badgeClass = "bg-sky-950 text-sky-400 border-sky-800";
+        if (e.type === 'CONSUMED') badgeClass = "bg-rose-950 text-rose-400 border-rose-800";
+        if (e.type === 'RECEIVED') badgeClass = "bg-emerald-950 text-emerald-400 border-emerald-800";
+        if (e.type === 'STORED') badgeClass = "bg-blue-950 text-blue-400 border-blue-800";
+        if (e.type === 'MASS_RELOCATE') badgeClass = "bg-purple-950 text-purple-400 border-purple-800";
+
+        if (e.type === 'MASS_RELOCATE') {
+          const summary = e.transfers.map(t => `${t.sku} (${t.count})`).join(', ');
+          return `
+            <tr class="hover:bg-slate-800/30">
+              <td class="py-2 px-3 text-slate-400 text-[11px]">${date} ${time}</td>
+              <td class="py-2 px-3"><span class="px-1.5 py-0.5 rounded text-[10px] border ${badgeClass}">${e.type}</span></td>
+              <td class="py-2 px-3 text-purple-300 font-bold">${summary}</td>
+              <td class="py-2 px-3 text-slate-300">${e.sourceLocationId} &rarr; <span class="text-emerald-400">${e.targetLocationId}</span></td>
+              <td class="py-2 px-3 text-center text-slate-400 font-bold">&bull;</td>
+              <td class="py-2 px-3 text-right text-slate-400 text-[11px]">${e.techId}</td>
+            </tr>
+          `;
+        }
+
+        return `
+          <tr class="hover:bg-slate-800/30">
+            <td class="py-2 px-3 text-slate-400 text-[11px]">${date} ${time}</td>
+            <td class="py-2 px-3"><span class="px-1.5 py-0.5 rounded text-[10px] border ${badgeClass}">${e.type}</span></td>
+            <td class="py-2 px-3 text-white font-bold">${e.sku} <span class="text-slate-500 font-sans font-normal text-[10px]">(${e.reason || 'Delta'})</span></td>
+            <td class="py-2 px-3 text-amber-400">${e.locationId}</td>
+            <td class="py-2 px-3 text-center font-bold ${e.delta < 0 ? 'text-rose-400' : 'text-emerald-400'}">
+              ${e.delta > 0 ? '+' + e.delta : e.delta} <span class="text-[10px] text-slate-500 font-normal">(${e.packagingTier || 'ITEM'})</span>
+            </td>
+            <td class="py-2 px-3 text-right text-slate-400 text-[11px]">${e.techId}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function exportSnapshotCsv() {
+      const matrix = calculateStockMatrix();
+      let csv = "SKU,Description,Category,Total_Quantity,UOM,Primary_Bins,Consumed_24h,Received_24h\r\n";
+
+      STATE.catalog.forEach(item => {
+        const data = matrix[item.sku] || { total: 0, byLocation: {}, consumedHistory: [], receivedHistory: [] };
+        const cons24 = getMetricInWindow(data.consumedHistory, 24);
+        const rec24 = getMetricInWindow(data.receivedHistory, 24);
+        const bins = Object.entries(data.byLocation).filter(([_, q]) => q > 0).map(([l, q]) => `${l}(${q})`).join('; ');
+        
+        csv += `"${item.sku}","${item.name}","${item.category}",${data.total},"${item.uom}","${bins}",${cons24},${rec24}\r\n`;
+      });
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `DC_Materials_Vault_Snapshot_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast("Inventory snapshot exported to CSV.", "success");
+    }
+
+    function generateShiftHandoffDigest() {
+      const matrix = calculateStockMatrix();
+      const cutoff = Date.now() - (12 * 3600000);
+      
+      let digest = `### 📋 Shift Material Logistics Digest (${new Date().toLocaleDateString()})\n\n`;
+      digest += `**Lead/Tech:** ${document.getElementById('techIdInput')?.value || STATE.techId}\n`;
+      digest += `**Total Material SKUs Tracked:** ${STATE.catalog.length}\n\n`;
+      
+      digest += `#### 🔻 Floor Consumed (Past 12h):\n`;
+      let hasConsumed = false;
+      STATE.events.forEach(evt => {
+        if ((evt.type === 'CONSUMED' || evt.delta < 0) && new Date(evt.timestamp).getTime() >= cutoff) {
+          hasConsumed = true;
+          digest += `• **${evt.sku}**: ${Math.abs(evt.delta)} EA at \`${evt.locationId}\` (${evt.reason || 'Floor Task'})\n`;
+        }
+      });
+      if (!hasConsumed) digest += `• No floor consumption recorded this shift block.\n`;
+
+      digest += `\n#### 📦 Floor Received / Restocked (Past 12h):\n`;
+      let hasReceived = false;
+      STATE.events.forEach(evt => {
+        if ((evt.type === 'RECEIVED' || evt.type === 'STORED' || evt.delta > 0) && new Date(evt.timestamp).getTime() >= cutoff) {
+          hasReceived = true;
+          digest += `• **${evt.sku}**: +${evt.delta} EA into \`${evt.locationId}\` (${evt.packagingTier || 'ITEM'})\n`;
+        }
+      });
+      if (!hasReceived) digest += `• No inbound receipts recorded this shift block.\n`;
+
+      digest += `\n#### ⚠️ Current Below-Par Alerts:\n`;
+      STATE.catalog.forEach(item => {
+        const total = matrix[item.sku]?.total || 0;
+        if (total < (item.minThreshold || 10)) {
+          digest += `• **${item.name}** (\`${item.sku}\`): **${total} ${item.uom}** (Par: ${item.minThreshold})\n`;
+        }
+      });
+
+      const dummy = document.createElement("textarea");
+      document.body.appendChild(dummy);
+      dummy.value = digest;
+      dummy.select();
+      document.execCommand("copy");
+      document.body.removeChild(dummy);
+
+      showToast("Shift Handoff Digest copied to clipboard!", "success");
+    }
+
+    function openPrintModal(code, title, tagType) {
+      const root = document.getElementById('printModalRoot');
+      const svg = document.getElementById('modalBarcodeSvg');
+      
+      document.getElementById('printModalTypeTag').textContent = tagType;
+      document.getElementById('printModalTitle').textContent = title;
+      document.getElementById('printModalSubtitle').textContent = code;
+
+      JsBarcode(svg, code, {
+        format: "CODE128",
+        lineColor: "#000000",
+        width: 2.2,
+        height: 55,
+        displayValue: true,
+        fontSize: 14,
+        font: "JetBrains Mono, monospace",
+        margin: 10
+      });
+
+      root.classList.remove('hidden');
+    }
+
+    function closePrintModal() {
+      document.getElementById('printModalRoot').classList.add('hidden');
+    }
+
+    function showToast(message, type = "info") {
+      const toast = document.getElementById('toastNotification');
+      const msg = document.getElementById('toastMessage');
+      const icon = document.getElementById('toastIcon');
+
+      msg.textContent = message;
+
+      if (type === 'success') {
+        toast.className = "fixed bottom-5 right-5 z-50 max-w-md bg-emerald-950 border border-emerald-500 text-emerald-100 px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 flex items-center gap-3";
+        icon.innerHTML = "&check;";
+        icon.className = "text-emerald-400 font-bold text-base";
+      } else if (type === 'error') {
+        toast.className = "fixed bottom-5 right-5 z-50 max-w-md bg-rose-950 border border-rose-500 text-rose-100 px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 flex items-center gap-3";
+        icon.innerHTML = "&times;";
+        icon.className = "text-rose-400 font-bold text-base";
+      } else {
+        toast.className = "fixed bottom-5 right-5 z-50 max-w-md bg-slate-900 border border-sky-500 text-white px-4 py-3 rounded-xl shadow-2xl transition-all duration-300 flex items-center gap-3";
+        icon.innerHTML = "&bull;";
+        icon.className = "text-sky-400 font-bold text-base";
+      }
+
+      toast.classList.remove('translate-y-20', 'opacity-0');
+
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 3500);
+    }
+
+    function switchView(viewName) {
+      STATE.activeView = viewName;
+
+      document.querySelectorAll('.nav-tab').forEach(tab => {
+        tab.classList.remove('bg-sky-600', 'text-white', 'shadow-sm');
+        tab.classList.add('text-slate-400');
+      });
+      const activeTab = document.getElementById(`tab-${viewName}`);
+      if (activeTab) {
+        activeTab.classList.add('bg-sky-600', 'text-white', 'shadow-sm');
+        activeTab.classList.remove('text-slate-400');
+      }
+
+      ['dashboard', 'catalog', 'locations', 'massMove', 'ledger'].forEach(v => {
+        const el = document.getElementById(`view-${v}`);
+        if (el) el.classList.add('hidden');
+      });
+
+      const targetView = document.getElementById(`view-${viewName}`);
+      if (targetView) targetView.classList.remove('hidden');
+
+      if (viewName === 'dashboard') {
+        renderDashboardTable();
+        updateInventoryChart();
+      }
+      if (viewName === 'catalog') renderCatalogTable();
+      if (viewName === 'locations') renderLocationTable();
+      if (viewName === 'massMove') populateMassMoveDropdowns();
+      if (viewName === 'ledger') renderLedgerTable();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadFromLocalStorage();
+      renderCategoryFilters();
+      renderLocationTable();
+      renderCatalogTable();
+      populateMassMoveDropdowns();
+      renderDashboardTable();
+      renderLedgerTable();
+      initInventoryChart();
+    });
+  </script>
+</body>
+</html>
